@@ -294,7 +294,6 @@ header{background:#ffffff!important;color:var(--text)!important;border-bottom:4p
   <div class="header-actions"><span class="usuario-activo" id="usuarioActivoBadge">Sin usuario</span>
       <button class="catalogo-btn" type="button" onclick="abrirCatalogoMaquinas()">Cat. máquinas</button>
       <button class="catalogo-btn" type="button" onclick="abrirCatalogoOperadores()">Cat. operadores</button>
-      <button class="catalogo-btn" type="button" onclick="abrirCatalogoMateriales()">Cat. materiales</button>
       <button class="catalogo-btn" type="button" onclick="abrirCatalogoUsuarios()">Usuarios / perfiles</button>
     <button class="catalogo-btn salir-btn" type="button" onclick="cerrarSesion()">Salir</button></div>
 </header>
@@ -331,16 +330,6 @@ header{background:#ffffff!important;color:var(--text)!important;border-bottom:4p
           <button class="btn-primary" type="submit">Agregar operador</button>
         </form>
         <div id="catalogoOperadores" class="catalogo-lista"></div>
-      </section>
-
-      <section id="catalogoSeccionMateriales" class="catalogo-seccion" style="display:none">
-        <h3 style="margin:0 0 6px">Catálogo de materiales</h3>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 14px">Estos rubros aparecen en el desplegable de carga de órdenes.</p>
-        <form id="materialForm" class="operador-form-grid">
-          <div class="field"><label for="nombreMaterial">Rubro de material</label><input id="nombreMaterial" required placeholder="Ej. Papel couché, BOPP, Adhesivo"></div>
-          <button class="btn-primary" type="submit">Agregar material</button>
-        </form>
-        <div id="catalogoMateriales" class="catalogo-lista"></div>
       </section>
 
       <section id="catalogoSeccionUsuarios" class="catalogo-seccion" style="display:none">
@@ -390,7 +379,7 @@ header{background:#ffffff!important;color:var(--text)!important;border-bottom:4p
 <section id="captura" class="tab active">
   <div class="grid-captura">
     <section class="panel"><div class="panel-header"><h2>Agregar orden</h2><p>Captura los datos básicos de la orden.</p></div><div class="panel-body">
-      <form id="ordenForm"><div class="field"><label for="cliente">Nombre del cliente</label><input id="cliente" required></div><div class="field"><label for="numeroOrden">Número de orden</label><input id="numeroOrden" required></div><div class="field"><label for="materialOrden">Rubro de material</label><select id="materialOrden" required><option value="">Agrega un material en catálogo</option></select></div><div class="form-grid"><div class="field"><label for="partidas">Partidas</label><input id="partidas" type="number" min="1" required></div><div class="field"><label for="metros">Metros / cantidad</label><input id="metros" type="number" min="0.01" step="0.01" required></div></div><button class="btn-primary" style="width:100%" type="submit">Agregar orden</button></form>
+      <form id="ordenForm"><div class="field"><label for="cliente">Nombre del cliente</label><input id="cliente" required></div><div class="field"><label for="numeroOrden">Número de orden</label><input id="numeroOrden" required></div><div class="form-grid"><div class="field"><label for="partidas">Partidas</label><input id="partidas" type="number" min="1" required></div><div class="field"><label for="metros">Metros / cantidad</label><input id="metros" type="number" min="0.01" step="0.01" required></div></div><button class="btn-primary" style="width:100%" type="submit">Agregar orden</button></form>
       <p style="color:var(--muted);font-size:12px">Los datos se guardan localmente en este navegador.</p>
     </div></section>
     <section class="panel"><div class="panel-header"><h2>Fila de impresión</h2><p>Órdenes pendientes.</p></div><div class="panel-body">
@@ -529,23 +518,6 @@ let supabaseClient=null;
 let supabaseCanal=null;
 let cargandoDesdeSupabase=false;
 let guardadoSupabaseTimer=null;
-
-function purgarDatosAnterioresUnaVez(){
-  try{
-    if(localStorage.getItem(RESET_MARKER_KEY)==='1')return;
-    const borrar=[];
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      if(!k)continue;
-      if(k===STORAGE_KEY||k===RESET_MARKER_KEY)continue;
-      if(k===USERS_STORAGE_KEY||k.includes('control_produccion_imprenta')||k.includes('control_metros_imprenta'))borrar.push(k);
-    }
-    borrar.forEach(k=>localStorage.removeItem(k));
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(estadoInicial()));
-    localStorage.setItem(RESET_MARKER_KEY,'1');
-  }catch(e){}
-}
-
 
 function purgarDatosAnterioresUnaVez(){
   try{
@@ -910,7 +882,6 @@ function estadoInicial(){
     ordenes:[],
     maquinas:[],
     operadores:[],
-    materiales:[],
     historial:[],
     reportesTurno:[],
     usuarios:usuariosDefault(),
@@ -920,11 +891,10 @@ function estadoInicial(){
 function migrar(data){
   if(!data||!Array.isArray(data.ordenes)||!Array.isArray(data.maquinas))return estadoInicial();
   data.operadores=Array.isArray(data.operadores)?data.operadores:[];
-  data.materiales=Array.isArray(data.materiales)?data.materiales:[];
   data.historial=Array.isArray(data.historial)?data.historial:[];
   data.usuarios=Array.isArray(data.usuarios)?data.usuarios:usuariosDefault();
   data.bitacora=Array.isArray(data.bitacora)?data.bitacora:[];
-  data.ordenes=data.ordenes.map(o=>({...o,metros:Number(o.metros||0),metrosOriginales:Number(o.metrosOriginales||o.metros||0),materialId:o.materialId||'',materialNombre:o.materialNombre||o.rubroMaterial||''}));
+  data.ordenes=data.ordenes.map(o=>({...o,metros:Number(o.metros||0),metrosOriginales:Number(o.metrosOriginales||o.metros||0)}));
   return data;
 }
 function cargarEstado(){
@@ -952,14 +922,12 @@ function mostrarSeccionCatalogo(seccion,titulo){
   const modal=document.getElementById('catalogoModal');
   if(!modal)return;
   document.getElementById('catalogoTitulo').textContent=titulo;
-  ['catalogoSeccionMaquinas','catalogoSeccionOperadores','catalogoSeccionMateriales','catalogoSeccionUsuarios'].forEach(id=>{
+  ['catalogoSeccionMaquinas','catalogoSeccionOperadores','catalogoSeccionUsuarios'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.display=id===seccion?'block':'none';
   });
   renderizarCatalogoMaquinas();
   renderizarOperadores();
-  renderizarMateriales();
-  poblarMaterialesOrden();
   renderizarUsuarios();
   renderizarBitacora();
   modal.classList.add('show');
@@ -967,14 +935,13 @@ function mostrarSeccionCatalogo(seccion,titulo){
 function abrirCatalogo(){abrirCatalogoMaquinas()}
 function abrirCatalogoMaquinas(){abrirCatalogoBase('catalogoSeccionMaquinas','Catálogo de máquinas')}
 function abrirCatalogoOperadores(){abrirCatalogoBase('catalogoSeccionOperadores','Catálogo de operadores')}
-function abrirCatalogoMateriales(){abrirCatalogoBase('catalogoSeccionMateriales','Catálogo de materiales')}
 function abrirCatalogoUsuarios(){
   if(!requerirPermiso('usuarios','Solo Administrador puede administrar usuarios y perfiles.'))return;
   mostrarSeccionCatalogo('catalogoSeccionUsuarios','Usuarios / perfiles');
 }
 function cerrarCatalogo(){document.getElementById('catalogoModal').classList.remove('show')}
 function cerrarCatalogoSiFondo(e){if(e.target.id==='catalogoModal')cerrarCatalogo()}
-function crearOrdenCard(orden, compacta=false){const card=document.createElement('div');card.className=compacta?'orden-card compacta':'orden-card';card.draggable=true;card.dataset.ordenId=orden.id;const maquina=estado.maquinas.find(m=>m.id===orden.asignadaA);const materialNombre=orden.materialNombre||((estado.materiales||[]).find(m=>m.id===orden.materialId)||{}).nombre||'';const materialChip=materialNombre?`<span class="tipo-chip" title="Rubro de material">${escaparHtml(materialNombre)}</span>`:'';const parcial=!!(orden.tieneParcial||orden.ultimoParcialEn);const cantidad=`<strong class="${parcial?'cantidad-parcial':'metros'}" data-cantidad-orden-id="${orden.id}">${formatoNumero(orden.metros)}</strong>`;const badge=parcial?'<span class="badge-parcial">PARCIAL</span>':'';if(compacta){
+function crearOrdenCard(orden, compacta=false){const card=document.createElement('div');card.className=compacta?'orden-card compacta':'orden-card';card.draggable=true;card.dataset.ordenId=orden.id;const maquina=estado.maquinas.find(m=>m.id===orden.asignadaA);const parcial=!!(orden.tieneParcial||orden.ultimoParcialEn);const cantidad=`<strong class="${parcial?'cantidad-parcial':'metros'}" data-cantidad-orden-id="${orden.id}">${formatoNumero(orden.metros)}</strong>`;const badge=parcial?'<span class="badge-parcial">PARCIAL</span>':'';if(compacta){
   const cls=claseSemaforoOrden(orden.creadaEn);
   const tip=tituloSemaforoOrden(orden.creadaEn);
   const cantClass=parcial?'orden-cant-mini parcial':'orden-cant-mini';
@@ -982,7 +949,6 @@ function crearOrdenCard(orden, compacta=false){const card=document.createElement
     <div class="orden-fila-top">
       <span class="orden-num-mini ${cls}" title="${tip}">${escaparHtml(orden.numeroOrden)}</span>
       <span class="orden-cliente-mini">${escaparHtml(orden.cliente)}</span>
-      ${materialChip}
       ${parcial?'<span class="badge-parcial">P</span>':''}
     </div>
     <div class="orden-fila-bot">
@@ -995,7 +961,7 @@ function crearOrdenCard(orden, compacta=false){const card=document.createElement
       </span>
     </div>
   </div>`;
-}else{const btnEliminar=puedeBorrarOrden(orden)?`<button class="btn-danger btn-small btn-eliminar-compacto" type="button" onclick="eliminarOrden('${orden.id}')">Eliminar</button>`:'';card.innerHTML=`<div class="orden-top orden-top-pendiente"><div class="orden-pendiente-head">${htmlNumeroOrden(orden)}</div>${btnEliminar}</div><div class="orden-resumen-pendiente"><span class="orp-cliente">${escaparHtml(orden.cliente)}${materialNombre?` · ${escaparHtml(materialNombre)}`:''}</span>${parcial?'<span class="badge-parcial">P</span>':'<span></span>'}<span class="orp-dato">P:${formatoNumero(orden.partidas)}</span><span class="orp-dato">M:${cantidad}</span></div>${maquina?`<div class="orden-meta orden-meta-pendiente"><span>Máquina: <strong>${escaparHtml(maquina.nombre)}</strong></span><span>Unidad: <strong>${capitalizar(maquina.unidad)}</strong></span></div>`:''}${orden.asignadaA?`<div class="orden-actions"><button class="btn-success btn-small" type="button" onclick="cerrarOrden('${orden.id}')">Cerrar orden</button><button class="btn-secondary btn-small" type="button" onclick="cierreParcialOrden('${orden.id}')">Cierre parcial</button><button class="btn-secondary btn-small" type="button" onclick="regresarAFila('${orden.id}')">Regresar a fila</button></div>`:''}`}
+}else{card.innerHTML=`<div class="orden-top orden-top-pendiente"><div class="orden-pendiente-head">${htmlNumeroOrden(orden)}</div><button class="btn-danger btn-small btn-eliminar-compacto" type="button" onclick="eliminarOrden('${orden.id}')">Eliminar</button></div><div class="orden-resumen-pendiente"><span class="orp-cliente">${escaparHtml(orden.cliente)}</span>${parcial?'<span class="badge-parcial">P</span>':'<span></span>'}<span class="orp-dato">P:${formatoNumero(orden.partidas)}</span><span class="orp-dato">M:${cantidad}</span></div>${maquina?`<div class="orden-meta orden-meta-pendiente"><span>Máquina: <strong>${escaparHtml(maquina.nombre)}</strong></span><span>Unidad: <strong>${capitalizar(maquina.unidad)}</strong></span></div>`:''}${orden.asignadaA?`<div class="orden-actions"><button class="btn-success btn-small" type="button" onclick="cerrarOrden('${orden.id}')">Cerrar orden</button><button class="btn-secondary btn-small" type="button" onclick="cierreParcialOrden('${orden.id}')">Cierre parcial</button><button class="btn-secondary btn-small" type="button" onclick="regresarAFila('${orden.id}')">Regresar a fila</button></div>`:''}`}
 card.addEventListener('dragstart',e=>{draggedOrdenId=orden.id;draggedMaquinaId=null;e.dataTransfer.setData('text/plain',`orden:${orden.id}`);e.dataTransfer.effectAllowed='move';card.classList.add('dragging')});card.addEventListener('dragend',()=>{draggedOrdenId=null;card.classList.remove('dragging');limpiarEstadosDrag()});return card}
 function limpiarEstadosDrag(){document.querySelectorAll('.drag-over,.reorder-over,.reorder-dragging').forEach(e=>e.classList.remove('drag-over','reorder-over','reorder-dragging'))}function refrescarModuloMaquinas(msg=''){guardarEstado();renderizarFilaImpresion();renderizarCatalogoMaquinas();renderizarMaquinas();renderizarTotales();actualizarProduccionVivoSiVisible();if(msg)mostrarToast(msg)}function asignarOrdenAMaquina(ordenId,maquinaId){const o=estado.ordenes.find(x=>x.id===ordenId),m=estado.maquinas.find(x=>x.id===maquinaId);if(!o||!m)return;o.asignadaA=m.id;refrescarModuloMaquinas(`Orden ${o.numeroOrden} asignada a ${m.nombre}.`)}function prepararDropOrdenes(el,destinoId){if(!el)return;el.ondragover=e=>{if(!draggedOrdenId)return;e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')};el.ondragleave=()=>el.classList.remove('drag-over');el.ondrop=e=>{if(!draggedOrdenId)return;e.preventDefault();e.stopPropagation();el.classList.remove('drag-over');const o=estado.ordenes.find(x=>x.id===draggedOrdenId);if(!o)return;if(destinoId==='pendientes'){o.asignadaA=null;refrescarModuloMaquinas('Orden regresada a fila.')}else asignarOrdenAMaquina(draggedOrdenId,destinoId);draggedOrdenId=null}}
 function renderizarFilaImpresion(){
@@ -1042,61 +1008,6 @@ function renderizarCatalogoMaquinas(){
   });
 }
 
-
-function materialFueUsado(id){
-  return estado.ordenes.some(o=>o.materialId===id)
-    || estado.historial.some(h=>h.materialId===id);
-}
-function toggleStatusMaterial(id){
-  if(!requerirPermiso('catalogos'))return;
-  const mat=(estado.materiales||[]).find(x=>x.id===id);if(!mat)return;
-  mat.baja=!mat.baja;
-  registrarMovimiento(mat.baja?'Material dado de baja':'Material reactivado', mat.nombre);
-  guardarEstado();renderizarMateriales();poblarMaterialesOrden();
-  mostrarToast(mat.baja?`${mat.nombre} dado de baja.`:`${mat.nombre} reactivado.`);
-}
-function renderizarMateriales(){
-  const c=document.getElementById('catalogoMateriales');if(!c)return;
-  const materiales=Array.isArray(estado.materiales)?estado.materiales:[];
-  c.innerHTML='';
-  materiales.forEach(mat=>{
-    const usado=materialFueUsado(mat.id);
-    const baja=!!mat.baja;
-    const chipEstatus=baja
-      ? '<span class="tipo-chip" style="background:#fee2e2;color:#991b1b">DADO DE BAJA</span>'
-      : '<span class="tipo-chip" style="background:#dcfce7;color:#166534">VIGENTE</span>';
-    const btnAccion=usado
-      ? `<button class="btn-small ${baja?'btn-success':'btn-danger'}" onclick="toggleStatusMaterial('${mat.id}')">${baja?'Reactivar':'Dar de baja'}</button>`
-      : `<button class="btn-small btn-danger" onclick="eliminarMaterial('${mat.id}')">Eliminar</button>`;
-    const div=document.createElement('div');
-    div.className='operador-card';
-    div.style.opacity=baja?'0.6':'1';
-    div.innerHTML=`<div><strong>${escaparHtml(mat.nombre)}</strong> ${chipEstatus}</div>${btnAccion}`;
-    c.appendChild(div);
-  });
-  if(!materiales.length)c.innerHTML='<div class="empty">No hay materiales. Agrega al menos uno para poder cargar órdenes.</div>';
-}
-function opcionesMaterialesHtml(sel=''){
-  const materiales=(estado.materiales||[]).filter(m=>!m.baja||m.id===sel);
-  const base='<option value="">Selecciona material</option>';
-  if(!materiales.length)return '<option value="">Agrega un material en catálogo</option>';
-  return base+materiales.map(m=>`<option value="${m.id}" ${m.id===sel?'selected':''} ${m.baja?'disabled':''}>${escaparHtml(m.nombre)}${m.baja?' · DADO DE BAJA':''}</option>`).join('');
-}
-function poblarMaterialesOrden(sel=''){
-  const s=document.getElementById('materialOrden');if(!s)return;
-  const actual=sel||s.value||'';
-  s.innerHTML=opcionesMaterialesHtml(actual);
-}
-function eliminarMaterial(id){
-  if(!requerirPermiso('catalogos'))return;
-  const mat=(estado.materiales||[]).find(x=>x.id===id);if(!mat)return;
-  if(materialFueUsado(id)){mostrarToast('No se puede eliminar: el material ya está ligado a órdenes o historial. Usa "Dar de baja".');return}
-  if(!confirm(`¿Eliminar material ${mat.nombre}?`))return;
-  estado.materiales=estado.materiales.filter(x=>x.id!==id);
-  registrarMovimiento('Eliminó material',mat.nombre);
-  guardarEstado();renderizarMateriales();poblarMaterialesOrden();mostrarToast('Material eliminado.');
-}
-
 function renderizarUsuarios(){
   const c=document.getElementById('catalogoUsuarios');if(!c)return;
   asegurarUsuarios();
@@ -1127,13 +1038,7 @@ function renderizarBitacora(){
 }
 
 function operadorFueUsado(id){
-  /* Un operador queda protegido contra eliminación si ya estuvo ligado a producción:
-     - tiene historial de órdenes cerradas/parciales,
-     - está asignado actualmente a una máquina,
-     - o existe evidencia en bitácora de asignación/reactivación/baja/eliminación previa. */
-  return estado.historial.some(h=>h.operadorId===id)
-    || estado.maquinas.some(m=>m.operadorActualId===id)
-    || (estado.bitacora||[]).some(b=>String(b.detalle||'').includes(id));
+  return estado.historial.some(h=>h.operadorId===id) || estado.maquinas.some(m=>m.operadorActualId===id);
 }
 function toggleStatusOperador(id){
   if(!requerirPermiso('catalogos'))return;
@@ -1152,51 +1057,20 @@ function renderizarOperadores(){
     const chipEstatus=baja
       ? '<span class="tipo-chip" style="background:#fee2e2;color:#991b1b">DADO DE BAJA</span>'
       : '<span class="tipo-chip" style="background:#dcfce7;color:#166534">VIGENTE</span>';
-    const btnBaja=`<button class="btn-small ${baja?'btn-success':'btn-danger'}" onclick="toggleStatusOperador('${o.id}')">${baja?'Reactivar':'Dar de baja'}</button>`;
-    const btnEliminar=usado
-      ? '<span class="tipo-chip" title="Ya tuvo máquina u órdenes asignadas; no se puede eliminar.">Protegido</span>'
+    const btnAccion=usado
+      ? `<button class="btn-small ${baja?'btn-success':'btn-danger'}" onclick="toggleStatusOperador('${o.id}')">${baja?'Reactivar':'Dar de baja'}</button>`
       : `<button class="btn-small btn-danger" onclick="eliminarOperador('${o.id}')">Eliminar</button>`;
     const div=document.createElement('div');
     div.className='operador-card';
     div.style.opacity=baja?'0.6':'1';
-    div.innerHTML=`<div><strong>${escaparHtml(o.nombre)}</strong> ${chipEstatus}</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${btnBaja}${btnEliminar}</div>`;
+    div.innerHTML=`<div><strong>${escaparHtml(o.nombre)}</strong> ${chipEstatus}</div>${btnAccion}`;
     c.appendChild(div);
   });
 }
-function opcionesOperadoresHtml(sel=''){
-  const ops=estado.operadores.filter(o=>!o.baja||o.id===sel);
-  return '<option value="">Sin operador</option>'+ops.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''} ${o.baja?'disabled':''}>${escaparHtml(o.nombre)}${o.baja?' · DADO DE BAJA':''}</option>`).join('')
-}
-function asignarOperadorMaquina(mid,oid){
-  const m=estado.maquinas.find(x=>x.id===mid);if(!m)return;
-  if(oid){
-    const op=estado.operadores.find(x=>x.id===oid);
-    if(!op){mostrarToast('Operador no encontrado.');renderizarMaquinas();return}
-    if(op.baja){mostrarToast('No se puede asignar un operador dado de baja.');renderizarMaquinas();return}
-  }
-  m.operadorActualId=oid||'';
-  registrarMovimiento('Asignó operador a máquina',`${m.nombre} · ${oid?(estado.operadores.find(x=>x.id===oid)||{}).nombre:'Sin operador'}`);
-  guardarEstado();renderizarMaquinas()
-}
-function renderizarMaquinas(){const c=document.getElementById('maquinas');if(!c)return;c.innerHTML='';estado.maquinas.forEach(m=>{const ordenes=estado.ordenes.filter(o=>o.asignadaA===m.id),total=ordenes.reduce((s,o)=>s+Number(o.metros||0),0);const el=document.createElement('div');el.className='maquina';el.dataset.maquinaId=m.id;el.innerHTML=`<div class="maquina-header"><div><span class="machine-drag-handle" draggable="true" title="Arrastra para acomodar">⋮⋮</span><div class="maquina-titulo-linea"><h3>${escaparHtml(m.nombre)}</h3><select class="operador-maquina ${m.operadorActualId?'':'sin-operador'}" onchange="asignarOperadorMaquina('${m.id}',this.value)" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">${opcionesOperadoresHtml(m.operadorActualId)}</select></div></div><span class="maquina-total">${formatoNumero(total)} ${abreviarUnidad(m.unidad)}</span></div><div class="maquina-body"></div>`;prepararDropOrdenes(el,m.id);prepararReordenMaquina(el,m.id);c.appendChild(el);const body=el.querySelector('.maquina-body');if(!ordenes.length)body.innerHTML='<div class="empty">Arrastra órdenes aquí.</div>';else ordenes.forEach(o=>body.appendChild(crearOrdenCard(o,true)))})}
+function opcionesOperadoresHtml(sel=''){return '<option value="">Sin operador</option>'+estado.operadores.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${escaparHtml(o.nombre)}</option>`).join('')}function asignarOperadorMaquina(mid,oid){const m=estado.maquinas.find(x=>x.id===mid);if(!m)return;m.operadorActualId=oid||'';guardarEstado();renderizarMaquinas()}function renderizarMaquinas(){const c=document.getElementById('maquinas');if(!c)return;c.innerHTML='';estado.maquinas.forEach(m=>{const ordenes=estado.ordenes.filter(o=>o.asignadaA===m.id),total=ordenes.reduce((s,o)=>s+Number(o.metros||0),0);const el=document.createElement('div');el.className='maquina';el.dataset.maquinaId=m.id;el.innerHTML=`<div class="maquina-header"><div><span class="machine-drag-handle" draggable="true" title="Arrastra para acomodar">⋮⋮</span><div class="maquina-titulo-linea"><h3>${escaparHtml(m.nombre)}</h3><select class="operador-maquina ${m.operadorActualId?'':'sin-operador'}" onchange="asignarOperadorMaquina('${m.id}',this.value)" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">${opcionesOperadoresHtml(m.operadorActualId)}</select></div></div><span class="maquina-total">${formatoNumero(total)} ${abreviarUnidad(m.unidad)}</span></div><div class="maquina-body"></div>`;prepararDropOrdenes(el,m.id);prepararReordenMaquina(el,m.id);c.appendChild(el);const body=el.querySelector('.maquina-body');if(!ordenes.length)body.innerHTML='<div class="empty">Arrastra órdenes aquí.</div>';else ordenes.forEach(o=>body.appendChild(crearOrdenCard(o,true)))})}
 function prepararReordenMaquina(el,maquinaId){const h=el.querySelector('.machine-drag-handle');if(!h)return;h.addEventListener('dragstart',e=>{draggedMaquinaId=maquinaId;draggedOrdenId=null;e.dataTransfer.setData('text/plain',`maquina:${maquinaId}`);e.dataTransfer.effectAllowed='move';el.classList.add('reorder-dragging')});h.addEventListener('dragend',()=>{draggedMaquinaId=null;limpiarEstadosDrag()});el.addEventListener('dragover',e=>{if(draggedOrdenId)return;if(!draggedMaquinaId||draggedMaquinaId===maquinaId)return;e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('reorder-over')});el.addEventListener('drop',e=>{if(draggedOrdenId)return;if(!draggedMaquinaId||draggedMaquinaId===maquinaId)return;e.preventDefault();e.stopPropagation();reordenarMaquinas(draggedMaquinaId,maquinaId);draggedMaquinaId=null})}function reordenarMaquinas(origenId,destinoId){if(!requerirPermiso('maquinas'))return;const oi=estado.maquinas.findIndex(m=>m.id===origenId),di=estado.maquinas.findIndex(m=>m.id===destinoId);if(oi<0||di<0||oi===di)return;const [m]=estado.maquinas.splice(oi,1);estado.maquinas.splice(di,0,m);guardarEstado();renderizarCatalogoMaquinas();renderizarMaquinas();mostrarToast('Máquinas reordenadas.')}
 function regresarAFila(id){if(!requerirPermiso('maquinas'))return;const o=estado.ordenes.find(x=>x.id===id);if(!o)return;registrarMovimiento('Regresó orden a fila',o.numeroOrden);o.asignadaA=null;refrescarModuloMaquinas('Orden regresada a fila.')}
-function puedeBorrarOrden(o){
-  if(!o)return false;
-  if(o.asignadaA)return tienePermiso('borrar');
-  return tienePermiso('borrarOrdenPendiente');
-}
-function eliminarOrden(id){
-  const o=estado.ordenes.find(x=>x.id===id);if(!o)return;
-  if(!puedeBorrarOrden(o)){
-    mostrarToast(o.asignadaA?'Los supervisores no pueden borrar órdenes de producción; solo asignarlas o regresarlas a fila.':'No tienes permiso para borrar esta orden.');
-    return;
-  }
-  if(!confirm(`¿Eliminar orden ${o.numeroOrden}?`))return;
-  estado.ordenes=estado.ordenes.filter(x=>x.id!==id);
-  registrarMovimiento('Eliminó orden',`${o.numeroOrden} · ${o.cliente}`);
-  refrescarModuloMaquinas('Orden eliminada.');
-}
+function eliminarOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;if(o.asignadaA&&!tienePermiso('maquinas')){mostrarToast('No tienes permiso para borrar esta orden.');return}if(!o.asignadaA&&!requerirPermiso('borrarOrdenPendiente'))return;if(!o)return;if(!confirm(`¿Eliminar orden ${o.numeroOrden}?`))return;estado.ordenes=estado.ordenes.filter(x=>x.id!==id);registrarMovimiento('Eliminó orden',`${o.numeroOrden} · ${o.cliente}`);refrescarModuloMaquinas('Orden eliminada.')}
 function eliminarMaquina(id){
   if(!requerirPermiso('catalogos'))return;
   const m=estado.maquinas.find(x=>x.id===id);if(!m)return;
@@ -1210,15 +1084,15 @@ function eliminarMaquina(id){
 function eliminarOperador(id){
   if(!requerirPermiso('catalogos'))return;
   const o=estado.operadores.find(x=>x.id===id);if(!o)return;
-  if(operadorFueUsado(id)){mostrarToast('No se puede eliminar: el operador ya tuvo máquina u órdenes asignadas. Usa "Dar de baja".');return}
+  if(operadorFueUsado(id)){mostrarToast('No se puede eliminar: el operador ya tiene historial o está asignado. Usa "Dar de baja".');return}
   if(!confirm(`¿Eliminar ${o.nombre}?`))return;
   estado.maquinas.forEach(m=>{if(m.operadorActualId===id)m.operadorActualId=''});
   estado.operadores=estado.operadores.filter(x=>x.id!==id);
   registrarMovimiento('Eliminó operador',o.nombre);
   guardarEstado();renderizarOperadores();renderizarMaquinas();mostrarToast('Operador eliminado.');
 }
-function cierreParcialOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;const m=estado.maquinas.find(x=>x.id===o.asignadaA);if(!m){mostrarToast('La orden no tiene máquina.');return}const op=estado.operadores.find(x=>x.id===m.operadorActualId);if(!op){mostrarToast('Selecciona operador activo.');return}const pend=Number(o.metros||0),unidad=abreviarUnidad(m.unidad);const cap=prompt(`CIERRE PARCIAL\n\nOrden: ${o.numeroOrden}\nPendiente actual: ${formatoNumero(pend)} ${unidad}\n\n¿Cuántos ${unidad} lleva fabricados?`);if(cap===null)return;const cant=Number(String(cap).replace(',','.'));if(!Number.isFinite(cant)||cant<=0){alert('Cantidad inválida.');return}if(cant>pend){alert('No puede ser mayor al pendiente.');return}const nuevo=Number((pend-cant).toFixed(2));estado.historial.push({id:crearId(),ordenOriginalId:o.id,tipoCierre:nuevo<=0?'total_por_parcial':'parcial',cliente:o.cliente,numeroOrden:o.numeroOrden,partidas:Number(o.partidas||0),metros:cant,materialId:o.materialId||'',materialNombre:o.materialNombre||'',maquinaId:m.id,maquinaNombre:m.nombre,maquinaTipo:m.tipo,maquinaUnidad:m.unidad,operadorId:op.id,operadorNombre:op.nombre,creadaEn:o.creadaEn,cerradaEn:new Date().toISOString()});if(nuevo<=0){estado.ordenes=estado.ordenes.filter(x=>x.id!==id)}else{o.metros=nuevo;o.tieneParcial=true;o.ultimoParcialEn=new Date().toISOString()}refrescarModuloMaquinas(`Parcial registrado. Pendiente: ${formatoNumero(nuevo)} ${unidad}.`);renderizarProduccionVivo()}
-function cerrarOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;const m=estado.maquinas.find(x=>x.id===o.asignadaA);if(!m){mostrarToast('La orden no tiene máquina.');return}const op=estado.operadores.find(x=>x.id===m.operadorActualId);if(!op){mostrarToast('Selecciona operador activo.');return}const cant=Number(o.metros||0);if(!confirm(`¿Cerrar orden ${o.numeroOrden}?\nCantidad: ${formatoNumero(cant)} ${abreviarUnidad(m.unidad)}`))return;estado.historial.push({id:o.id,tipoCierre:'total',cliente:o.cliente,numeroOrden:o.numeroOrden,partidas:Number(o.partidas||0),metros:cant,materialId:o.materialId||'',materialNombre:o.materialNombre||'',maquinaId:m.id,maquinaNombre:m.nombre,maquinaTipo:m.tipo,maquinaUnidad:m.unidad,operadorId:op.id,operadorNombre:op.nombre,creadaEn:o.creadaEn,cerradaEn:new Date().toISOString()});estado.ordenes=estado.ordenes.filter(x=>x.id!==id);refrescarModuloMaquinas('Orden cerrada.');renderizarProduccionVivo()}
+function cierreParcialOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;const m=estado.maquinas.find(x=>x.id===o.asignadaA);if(!m){mostrarToast('La orden no tiene máquina.');return}const op=estado.operadores.find(x=>x.id===m.operadorActualId);if(!op){mostrarToast('Selecciona operador activo.');return}const pend=Number(o.metros||0),unidad=abreviarUnidad(m.unidad);const cap=prompt(`CIERRE PARCIAL\n\nOrden: ${o.numeroOrden}\nPendiente actual: ${formatoNumero(pend)} ${unidad}\n\n¿Cuántos ${unidad} lleva fabricados?`);if(cap===null)return;const cant=Number(String(cap).replace(',','.'));if(!Number.isFinite(cant)||cant<=0){alert('Cantidad inválida.');return}if(cant>pend){alert('No puede ser mayor al pendiente.');return}const nuevo=Number((pend-cant).toFixed(2));estado.historial.push({id:crearId(),ordenOriginalId:o.id,tipoCierre:nuevo<=0?'total_por_parcial':'parcial',cliente:o.cliente,numeroOrden:o.numeroOrden,partidas:Number(o.partidas||0),metros:cant,maquinaId:m.id,maquinaNombre:m.nombre,maquinaTipo:m.tipo,maquinaUnidad:m.unidad,operadorId:op.id,operadorNombre:op.nombre,creadaEn:o.creadaEn,cerradaEn:new Date().toISOString()});if(nuevo<=0){estado.ordenes=estado.ordenes.filter(x=>x.id!==id)}else{o.metros=nuevo;o.tieneParcial=true;o.ultimoParcialEn=new Date().toISOString()}refrescarModuloMaquinas(`Parcial registrado. Pendiente: ${formatoNumero(nuevo)} ${unidad}.`);renderizarProduccionVivo()}
+function cerrarOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;const m=estado.maquinas.find(x=>x.id===o.asignadaA);if(!m){mostrarToast('La orden no tiene máquina.');return}const op=estado.operadores.find(x=>x.id===m.operadorActualId);if(!op){mostrarToast('Selecciona operador activo.');return}const cant=Number(o.metros||0);if(!confirm(`¿Cerrar orden ${o.numeroOrden}?\nCantidad: ${formatoNumero(cant)} ${abreviarUnidad(m.unidad)}`))return;estado.historial.push({id:o.id,tipoCierre:'total',cliente:o.cliente,numeroOrden:o.numeroOrden,partidas:Number(o.partidas||0),metros:cant,maquinaId:m.id,maquinaNombre:m.nombre,maquinaTipo:m.tipo,maquinaUnidad:m.unidad,operadorId:op.id,operadorNombre:op.nombre,creadaEn:o.creadaEn,cerradaEn:new Date().toISOString()});estado.ordenes=estado.ordenes.filter(x=>x.id!==id);refrescarModuloMaquinas('Orden cerrada.');renderizarProduccionVivo()}
 function crearFilaGrafica({nombre,sub,valorPrincipal,valorSecundario,porcentaje,color='orange'}){return `<div class="grafica-fila"><div class="grafica-nombre">${escaparHtml(nombre)}${sub?`<span class="grafica-sub">${escaparHtml(sub)}</span>`:''}</div><div class="grafica-barra-base"><div class="grafica-barra-fill ${color==='dark'?'dark':''}" style="width:${porcentaje}%"></div></div><div class="grafica-valor">${valorPrincipal}${valorSecundario?`<span class="grafica-sub">${valorSecundario}</span>`:''}</div></div>`}
 function renderizarTablaTrabajoAsignado(){const c=document.getElementById('graficaTrabajoAsignado');if(!c)return;const datos=estado.maquinas.map(m=>{const os=estado.ordenes.filter(o=>o.asignadaA===m.id),op=estado.operadores.find(o=>o.id===m.operadorActualId);return{nombre:m.nombre,op:op?op.nombre:'Sin operador',ordenes:os.length,cantidad:os.reduce((s,o)=>s+Number(o.metros||0),0),unidad:m.unidad}}).filter(x=>x.ordenes>0).sort((a,b)=>b.ordenes-a.ordenes);if(!datos.length){c.innerHTML='<div class="grafica-vacia">No hay órdenes asignadas.</div>';return}const max=Math.max(...datos.map(d=>d.ordenes),1);c.innerHTML=datos.map(d=>crearFilaGrafica({nombre:d.nombre,sub:d.op,valorPrincipal:`${formatoNumero(d.ordenes)} órdenes`,valorSecundario:`${formatoNumero(d.cantidad)} ${abreviarUnidad(d.unidad)}`,porcentaje:Math.max(5,Math.round(d.ordenes/max*100))})).join('')}
 function renderizarTablaTrabajoCerradoVivo(){const c=document.getElementById('graficaTrabajoCerradoVivo');if(!c)return;const now=new Date(),ini=new Date(now.getTime()-24*3600000);const hist=estado.historial.filter(h=>h.cerradaEn&&new Date(h.cerradaEn)>=ini);const g={};hist.forEach(h=>{const n=h.maquinaNombre||'Sin máquina';if(!g[n])g[n]={nombre:n,cantidad:0,cierres:0,parciales:0,unidad:h.maquinaUnidad||'metros'};g[n].cantidad+=Number(h.metros||0);if(h.tipoCierre==='parcial'){g[n].parciales++}else{g[n].cierres++}});const datos=Object.values(g).sort((a,b)=>b.cantidad-a.cantidad);if(!datos.length){c.innerHTML='<div class="grafica-vacia">No hay órdenes cerradas en las últimas 24 horas.</div>';return}const max=Math.max(...datos.map(d=>d.cantidad),1);c.innerHTML=`<div style="font-size:12px;color:#6b7280;margin-bottom:8px">Leyendo ${hist.length} movimientos de las últimas 24 horas.</div>`+datos.map(d=>crearFilaGrafica({nombre:d.nombre,sub:`${d.cierres} cierres · ${d.parciales} parciales`,valorPrincipal:`${formatoNumero(d.cantidad)} ${abreviarUnidad(d.unidad)}`,porcentaje:Math.max(5,Math.round(d.cantidad/max*100)),color:'dark'})).join('')}
@@ -1362,13 +1236,11 @@ function renderizarTotales(){document.getElementById('totalPendientes').textCont
   const tabla=document.getElementById('tablaDetalle');
   if(tabla&&!tabla.innerHTML)tabla.innerHTML='<tr><td colspan="8">Selecciona filtros y presiona Consultar.</td></tr>';
 }
-function renderizar(){actualizarFechaYTurno();poblarMaterialesOrden();renderizarFilaImpresion();renderizarCatalogoMaquinas();renderizarOperadores();renderizarMateriales();renderizarUsuarios();renderizarBitacora();renderizarMaquinas();renderizarTotales();renderizarProduccionVivo();renderizarEstadistico()}
+function renderizar(){actualizarFechaYTurno();renderizarFilaImpresion();renderizarCatalogoMaquinas();renderizarOperadores();renderizarUsuarios();renderizarBitacora();renderizarMaquinas();renderizarTotales();renderizarProduccionVivo();renderizarEstadistico()}
 
-document.getElementById('ordenForm').addEventListener('submit',e=>{e.preventDefault();if(!requerirPermiso('captura'))return;const cliente=document.getElementById('cliente').value.trim(),numeroOrden=document.getElementById('numeroOrden').value.trim(),materialId=document.getElementById('materialOrden').value,partidas=Number(document.getElementById('partidas').value),metros=Number(document.getElementById('metros').value);const material=(estado.materiales||[]).find(m=>m.id===materialId&&!m.baja);if(!cliente||!numeroOrden||!material||partidas<=0||metros<=0){mostrarToast('Revisa datos y selecciona un material vigente.');return}if(estado.ordenes.some(o=>o.numeroOrden.toLowerCase()===numeroOrden.toLowerCase())||estado.historial.some(o=>o.numeroOrden.toLowerCase()===numeroOrden.toLowerCase())){if(!confirm(`Ya existe la orden ${numeroOrden}. ¿Agregar duplicada?`))return}estado.ordenes.push({id:crearId(),cliente,numeroOrden,materialId:material.id,materialNombre:material.nombre,partidas,metros,metrosOriginales:metros,asignadaA:null,creadaEn:new Date().toISOString()});e.target.reset();poblarMaterialesOrden();registrarMovimiento('Alta de orden',`${numeroOrden} · ${cliente} · ${material.nombre} · ${formatoNumero(metros)}`);refrescarModuloMaquinas('Orden agregada.')});
+document.getElementById('ordenForm').addEventListener('submit',e=>{e.preventDefault();if(!requerirPermiso('captura'))return;const cliente=document.getElementById('cliente').value.trim(),numeroOrden=document.getElementById('numeroOrden').value.trim(),partidas=Number(document.getElementById('partidas').value),metros=Number(document.getElementById('metros').value);if(!cliente||!numeroOrden||partidas<=0||metros<=0){mostrarToast('Revisa datos.');return}if(estado.ordenes.some(o=>o.numeroOrden.toLowerCase()===numeroOrden.toLowerCase())||estado.historial.some(o=>o.numeroOrden.toLowerCase()===numeroOrden.toLowerCase())){if(!confirm(`Ya existe la orden ${numeroOrden}. ¿Agregar duplicada?`))return}estado.ordenes.push({id:crearId(),cliente,numeroOrden,partidas,metros,metrosOriginales:metros,asignadaA:null,creadaEn:new Date().toISOString()});e.target.reset();registrarMovimiento('Alta de orden',`${numeroOrden} · ${cliente} · ${formatoNumero(metros)}`);refrescarModuloMaquinas('Orden agregada.')});
 document.getElementById('maquinaForm').addEventListener('submit',e=>{e.preventDefault();if(!requerirPermiso('catalogos'))return;const nombre=document.getElementById('nombreMaquina').value.trim(),tipo=document.getElementById('tipoMaquina').value,unidad=document.getElementById('unidadMaquina').value;if(!nombre||!tipo||!unidad)return;estado.maquinas.push({id:crearId(),nombre,tipo,unidad,operadorActualId:''});e.target.reset();registrarMovimiento('Alta de máquina',nombre);refrescarModuloMaquinas('Máquina agregada.')});
 document.getElementById('operadorForm').addEventListener('submit',e=>{e.preventDefault();if(!requerirPermiso('catalogos'))return;const nombre=document.getElementById('nombreOperador').value.trim();if(!nombre)return;estado.operadores.push({id:crearId(),nombre});registrarMovimiento('Alta de operador',nombre);e.target.reset();guardarEstado();renderizarOperadores();renderizarMaquinas();mostrarToast('Operador agregado.')});
-
-document.getElementById('materialForm')?.addEventListener('submit',e=>{e.preventDefault();if(!requerirPermiso('catalogos'))return;const nombre=document.getElementById('nombreMaterial').value.trim();if(!nombre)return;estado.materiales=Array.isArray(estado.materiales)?estado.materiales:[];if(estado.materiales.some(m=>m.nombre.toLowerCase()===nombre.toLowerCase())){mostrarToast('Ese material ya existe.');return}estado.materiales.push({id:crearId(),nombre,baja:false});registrarMovimiento('Alta de material',nombre);e.target.reset();guardarEstado();renderizarMateriales();poblarMaterialesOrden();mostrarToast('Material agregado.')});
 
 document.getElementById('usuarioForm')?.addEventListener('submit',e=>{
   e.preventDefault();
@@ -1423,8 +1295,7 @@ function filtrarFila(q){
       if(!o){card.style.display='';return;}
       const match=!texto||
         o.numeroOrden.toLowerCase().includes(texto)||
-        o.cliente.toLowerCase().includes(texto)||
-        String(o.materialNombre||'').toLowerCase().includes(texto);
+        o.cliente.toLowerCase().includes(texto);
       card.style.display=match?'':'none';
       if(match)visibles++;
     });
