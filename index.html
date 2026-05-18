@@ -519,6 +519,7 @@ let supabaseCanal=null;
 let cargandoDesdeSupabase=false;
 let guardadoSupabaseTimer=null;
 
+
 function purgarDatosAnterioresUnaVez(){
   try{
     if(localStorage.getItem(RESET_MARKER_KEY)==='1')return;
@@ -961,7 +962,7 @@ function crearOrdenCard(orden, compacta=false){const card=document.createElement
       </span>
     </div>
   </div>`;
-}else{card.innerHTML=`<div class="orden-top orden-top-pendiente"><div class="orden-pendiente-head">${htmlNumeroOrden(orden)}</div><button class="btn-danger btn-small btn-eliminar-compacto" type="button" onclick="eliminarOrden('${orden.id}')">Eliminar</button></div><div class="orden-resumen-pendiente"><span class="orp-cliente">${escaparHtml(orden.cliente)}</span>${parcial?'<span class="badge-parcial">P</span>':'<span></span>'}<span class="orp-dato">P:${formatoNumero(orden.partidas)}</span><span class="orp-dato">M:${cantidad}</span></div>${maquina?`<div class="orden-meta orden-meta-pendiente"><span>Máquina: <strong>${escaparHtml(maquina.nombre)}</strong></span><span>Unidad: <strong>${capitalizar(maquina.unidad)}</strong></span></div>`:''}${orden.asignadaA?`<div class="orden-actions"><button class="btn-success btn-small" type="button" onclick="cerrarOrden('${orden.id}')">Cerrar orden</button><button class="btn-secondary btn-small" type="button" onclick="cierreParcialOrden('${orden.id}')">Cierre parcial</button><button class="btn-secondary btn-small" type="button" onclick="regresarAFila('${orden.id}')">Regresar a fila</button></div>`:''}`}
+}else{const btnEliminar=puedeBorrarOrden(orden)?`<button class="btn-danger btn-small btn-eliminar-compacto" type="button" onclick="eliminarOrden('${orden.id}')">Eliminar</button>`:'';card.innerHTML=`<div class="orden-top orden-top-pendiente"><div class="orden-pendiente-head">${htmlNumeroOrden(orden)}</div>${btnEliminar}</div><div class="orden-resumen-pendiente"><span class="orp-cliente">${escaparHtml(orden.cliente)}</span>${parcial?'<span class="badge-parcial">P</span>':'<span></span>'}<span class="orp-dato">P:${formatoNumero(orden.partidas)}</span><span class="orp-dato">M:${cantidad}</span></div>${maquina?`<div class="orden-meta orden-meta-pendiente"><span>Máquina: <strong>${escaparHtml(maquina.nombre)}</strong></span><span>Unidad: <strong>${capitalizar(maquina.unidad)}</strong></span></div>`:''}${orden.asignadaA?`<div class="orden-actions"><button class="btn-success btn-small" type="button" onclick="cerrarOrden('${orden.id}')">Cerrar orden</button><button class="btn-secondary btn-small" type="button" onclick="cierreParcialOrden('${orden.id}')">Cierre parcial</button><button class="btn-secondary btn-small" type="button" onclick="regresarAFila('${orden.id}')">Regresar a fila</button></div>`:''}`}
 card.addEventListener('dragstart',e=>{draggedOrdenId=orden.id;draggedMaquinaId=null;e.dataTransfer.setData('text/plain',`orden:${orden.id}`);e.dataTransfer.effectAllowed='move';card.classList.add('dragging')});card.addEventListener('dragend',()=>{draggedOrdenId=null;card.classList.remove('dragging');limpiarEstadosDrag()});return card}
 function limpiarEstadosDrag(){document.querySelectorAll('.drag-over,.reorder-over,.reorder-dragging').forEach(e=>e.classList.remove('drag-over','reorder-over','reorder-dragging'))}function refrescarModuloMaquinas(msg=''){guardarEstado();renderizarFilaImpresion();renderizarCatalogoMaquinas();renderizarMaquinas();renderizarTotales();actualizarProduccionVivoSiVisible();if(msg)mostrarToast(msg)}function asignarOrdenAMaquina(ordenId,maquinaId){const o=estado.ordenes.find(x=>x.id===ordenId),m=estado.maquinas.find(x=>x.id===maquinaId);if(!o||!m)return;o.asignadaA=m.id;refrescarModuloMaquinas(`Orden ${o.numeroOrden} asignada a ${m.nombre}.`)}function prepararDropOrdenes(el,destinoId){if(!el)return;el.ondragover=e=>{if(!draggedOrdenId)return;e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')};el.ondragleave=()=>el.classList.remove('drag-over');el.ondrop=e=>{if(!draggedOrdenId)return;e.preventDefault();e.stopPropagation();el.classList.remove('drag-over');const o=estado.ordenes.find(x=>x.id===draggedOrdenId);if(!o)return;if(destinoId==='pendientes'){o.asignadaA=null;refrescarModuloMaquinas('Orden regresada a fila.')}else asignarOrdenAMaquina(draggedOrdenId,destinoId);draggedOrdenId=null}}
 function renderizarFilaImpresion(){
@@ -1038,7 +1039,13 @@ function renderizarBitacora(){
 }
 
 function operadorFueUsado(id){
-  return estado.historial.some(h=>h.operadorId===id) || estado.maquinas.some(m=>m.operadorActualId===id);
+  /* Un operador queda protegido contra eliminación si ya estuvo ligado a producción:
+     - tiene historial de órdenes cerradas/parciales,
+     - está asignado actualmente a una máquina,
+     - o existe evidencia en bitácora de asignación/reactivación/baja/eliminación previa. */
+  return estado.historial.some(h=>h.operadorId===id)
+    || estado.maquinas.some(m=>m.operadorActualId===id)
+    || (estado.bitacora||[]).some(b=>String(b.detalle||'').includes(id));
 }
 function toggleStatusOperador(id){
   if(!requerirPermiso('catalogos'))return;
@@ -1057,20 +1064,51 @@ function renderizarOperadores(){
     const chipEstatus=baja
       ? '<span class="tipo-chip" style="background:#fee2e2;color:#991b1b">DADO DE BAJA</span>'
       : '<span class="tipo-chip" style="background:#dcfce7;color:#166534">VIGENTE</span>';
-    const btnAccion=usado
-      ? `<button class="btn-small ${baja?'btn-success':'btn-danger'}" onclick="toggleStatusOperador('${o.id}')">${baja?'Reactivar':'Dar de baja'}</button>`
+    const btnBaja=`<button class="btn-small ${baja?'btn-success':'btn-danger'}" onclick="toggleStatusOperador('${o.id}')">${baja?'Reactivar':'Dar de baja'}</button>`;
+    const btnEliminar=usado
+      ? '<span class="tipo-chip" title="Ya tuvo máquina u órdenes asignadas; no se puede eliminar.">Protegido</span>'
       : `<button class="btn-small btn-danger" onclick="eliminarOperador('${o.id}')">Eliminar</button>`;
     const div=document.createElement('div');
     div.className='operador-card';
     div.style.opacity=baja?'0.6':'1';
-    div.innerHTML=`<div><strong>${escaparHtml(o.nombre)}</strong> ${chipEstatus}</div>${btnAccion}`;
+    div.innerHTML=`<div><strong>${escaparHtml(o.nombre)}</strong> ${chipEstatus}</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${btnBaja}${btnEliminar}</div>`;
     c.appendChild(div);
   });
 }
-function opcionesOperadoresHtml(sel=''){return '<option value="">Sin operador</option>'+estado.operadores.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${escaparHtml(o.nombre)}</option>`).join('')}function asignarOperadorMaquina(mid,oid){const m=estado.maquinas.find(x=>x.id===mid);if(!m)return;m.operadorActualId=oid||'';guardarEstado();renderizarMaquinas()}function renderizarMaquinas(){const c=document.getElementById('maquinas');if(!c)return;c.innerHTML='';estado.maquinas.forEach(m=>{const ordenes=estado.ordenes.filter(o=>o.asignadaA===m.id),total=ordenes.reduce((s,o)=>s+Number(o.metros||0),0);const el=document.createElement('div');el.className='maquina';el.dataset.maquinaId=m.id;el.innerHTML=`<div class="maquina-header"><div><span class="machine-drag-handle" draggable="true" title="Arrastra para acomodar">⋮⋮</span><div class="maquina-titulo-linea"><h3>${escaparHtml(m.nombre)}</h3><select class="operador-maquina ${m.operadorActualId?'':'sin-operador'}" onchange="asignarOperadorMaquina('${m.id}',this.value)" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">${opcionesOperadoresHtml(m.operadorActualId)}</select></div></div><span class="maquina-total">${formatoNumero(total)} ${abreviarUnidad(m.unidad)}</span></div><div class="maquina-body"></div>`;prepararDropOrdenes(el,m.id);prepararReordenMaquina(el,m.id);c.appendChild(el);const body=el.querySelector('.maquina-body');if(!ordenes.length)body.innerHTML='<div class="empty">Arrastra órdenes aquí.</div>';else ordenes.forEach(o=>body.appendChild(crearOrdenCard(o,true)))})}
+function opcionesOperadoresHtml(sel=''){
+  const ops=estado.operadores.filter(o=>!o.baja||o.id===sel);
+  return '<option value="">Sin operador</option>'+ops.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''} ${o.baja?'disabled':''}>${escaparHtml(o.nombre)}${o.baja?' · DADO DE BAJA':''}</option>`).join('')
+}
+function asignarOperadorMaquina(mid,oid){
+  const m=estado.maquinas.find(x=>x.id===mid);if(!m)return;
+  if(oid){
+    const op=estado.operadores.find(x=>x.id===oid);
+    if(!op){mostrarToast('Operador no encontrado.');renderizarMaquinas();return}
+    if(op.baja){mostrarToast('No se puede asignar un operador dado de baja.');renderizarMaquinas();return}
+  }
+  m.operadorActualId=oid||'';
+  registrarMovimiento('Asignó operador a máquina',`${m.nombre} · ${oid?(estado.operadores.find(x=>x.id===oid)||{}).nombre:'Sin operador'}`);
+  guardarEstado();renderizarMaquinas()
+}
+function renderizarMaquinas(){const c=document.getElementById('maquinas');if(!c)return;c.innerHTML='';estado.maquinas.forEach(m=>{const ordenes=estado.ordenes.filter(o=>o.asignadaA===m.id),total=ordenes.reduce((s,o)=>s+Number(o.metros||0),0);const el=document.createElement('div');el.className='maquina';el.dataset.maquinaId=m.id;el.innerHTML=`<div class="maquina-header"><div><span class="machine-drag-handle" draggable="true" title="Arrastra para acomodar">⋮⋮</span><div class="maquina-titulo-linea"><h3>${escaparHtml(m.nombre)}</h3><select class="operador-maquina ${m.operadorActualId?'':'sin-operador'}" onchange="asignarOperadorMaquina('${m.id}',this.value)" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">${opcionesOperadoresHtml(m.operadorActualId)}</select></div></div><span class="maquina-total">${formatoNumero(total)} ${abreviarUnidad(m.unidad)}</span></div><div class="maquina-body"></div>`;prepararDropOrdenes(el,m.id);prepararReordenMaquina(el,m.id);c.appendChild(el);const body=el.querySelector('.maquina-body');if(!ordenes.length)body.innerHTML='<div class="empty">Arrastra órdenes aquí.</div>';else ordenes.forEach(o=>body.appendChild(crearOrdenCard(o,true)))})}
 function prepararReordenMaquina(el,maquinaId){const h=el.querySelector('.machine-drag-handle');if(!h)return;h.addEventListener('dragstart',e=>{draggedMaquinaId=maquinaId;draggedOrdenId=null;e.dataTransfer.setData('text/plain',`maquina:${maquinaId}`);e.dataTransfer.effectAllowed='move';el.classList.add('reorder-dragging')});h.addEventListener('dragend',()=>{draggedMaquinaId=null;limpiarEstadosDrag()});el.addEventListener('dragover',e=>{if(draggedOrdenId)return;if(!draggedMaquinaId||draggedMaquinaId===maquinaId)return;e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('reorder-over')});el.addEventListener('drop',e=>{if(draggedOrdenId)return;if(!draggedMaquinaId||draggedMaquinaId===maquinaId)return;e.preventDefault();e.stopPropagation();reordenarMaquinas(draggedMaquinaId,maquinaId);draggedMaquinaId=null})}function reordenarMaquinas(origenId,destinoId){if(!requerirPermiso('maquinas'))return;const oi=estado.maquinas.findIndex(m=>m.id===origenId),di=estado.maquinas.findIndex(m=>m.id===destinoId);if(oi<0||di<0||oi===di)return;const [m]=estado.maquinas.splice(oi,1);estado.maquinas.splice(di,0,m);guardarEstado();renderizarCatalogoMaquinas();renderizarMaquinas();mostrarToast('Máquinas reordenadas.')}
 function regresarAFila(id){if(!requerirPermiso('maquinas'))return;const o=estado.ordenes.find(x=>x.id===id);if(!o)return;registrarMovimiento('Regresó orden a fila',o.numeroOrden);o.asignadaA=null;refrescarModuloMaquinas('Orden regresada a fila.')}
-function eliminarOrden(id){const o=estado.ordenes.find(x=>x.id===id);if(!o)return;if(o.asignadaA&&!tienePermiso('maquinas')){mostrarToast('No tienes permiso para borrar esta orden.');return}if(!o.asignadaA&&!requerirPermiso('borrarOrdenPendiente'))return;if(!o)return;if(!confirm(`¿Eliminar orden ${o.numeroOrden}?`))return;estado.ordenes=estado.ordenes.filter(x=>x.id!==id);registrarMovimiento('Eliminó orden',`${o.numeroOrden} · ${o.cliente}`);refrescarModuloMaquinas('Orden eliminada.')}
+function puedeBorrarOrden(o){
+  if(!o)return false;
+  if(o.asignadaA)return tienePermiso('borrar');
+  return tienePermiso('borrarOrdenPendiente');
+}
+function eliminarOrden(id){
+  const o=estado.ordenes.find(x=>x.id===id);if(!o)return;
+  if(!puedeBorrarOrden(o)){
+    mostrarToast(o.asignadaA?'Los supervisores no pueden borrar órdenes de producción; solo asignarlas o regresarlas a fila.':'No tienes permiso para borrar esta orden.');
+    return;
+  }
+  if(!confirm(`¿Eliminar orden ${o.numeroOrden}?`))return;
+  estado.ordenes=estado.ordenes.filter(x=>x.id!==id);
+  registrarMovimiento('Eliminó orden',`${o.numeroOrden} · ${o.cliente}`);
+  refrescarModuloMaquinas('Orden eliminada.');
+}
 function eliminarMaquina(id){
   if(!requerirPermiso('catalogos'))return;
   const m=estado.maquinas.find(x=>x.id===id);if(!m)return;
@@ -1084,7 +1122,7 @@ function eliminarMaquina(id){
 function eliminarOperador(id){
   if(!requerirPermiso('catalogos'))return;
   const o=estado.operadores.find(x=>x.id===id);if(!o)return;
-  if(operadorFueUsado(id)){mostrarToast('No se puede eliminar: el operador ya tiene historial o está asignado. Usa "Dar de baja".');return}
+  if(operadorFueUsado(id)){mostrarToast('No se puede eliminar: el operador ya tuvo máquina u órdenes asignadas. Usa "Dar de baja".');return}
   if(!confirm(`¿Eliminar ${o.nombre}?`))return;
   estado.maquinas.forEach(m=>{if(m.operadorActualId===id)m.operadorActualId=''});
   estado.operadores=estado.operadores.filter(x=>x.id!==id);
