@@ -930,6 +930,8 @@ function guardarEstadoLocal(data){safeSet(STORAGE_KEY,JSON.stringify(data))}
 
 let supabaseGuardando=false;
 let supabaseTimer=null;
+let supabaseArranqueCompleto=!supabaseConfigurado();
+let supabaseCargandoInicial=false;
 
 function supabaseConfigurado(){return !!supabaseClient}
 
@@ -971,11 +973,12 @@ async function cargarEstadoSupabase(){
 
 async function guardarEstadoSupabase(data=estado,inmediato=false){
   if(!supabaseConfigurado()||supabaseGuardando)return;
+  if(!supabaseArranqueCompleto&&!inmediato)return;
   const ejecutar=async()=>{
     supabaseGuardando=true;
     const payload={
       id:SUPABASE_STATE_ID,
-      data:data,
+      data:JSON.parse(JSON.stringify(data)),
       updated_at:new Date().toISOString()
     };
     const {error}=await supabaseClient.from(SUPABASE_TABLE).upsert(payload,{onConflict:'id'});
@@ -992,18 +995,30 @@ async function guardarEstadoSupabase(data=estado,inmediato=false){
 
 function guardarEstado(){
   safeSet(STORAGE_KEY,JSON.stringify(estado));
-  guardarEstadoSupabase(estado).catch(e=>console.error('Error guardando Supabase:',e));
+  if(supabaseArranqueCompleto&&!supabaseCargandoInicial){
+    guardarEstadoSupabase(estado).catch(e=>console.error('Error guardando Supabase:',e));
+  }
 }
 
 async function inicializarSupabaseAlInicio(){
-  if(!supabaseConfigurado())return;
+  if(!supabaseConfigurado())return false;
+  supabaseCargandoInicial=true;
+  supabaseArranqueCompleto=false;
+  clearTimeout(supabaseTimer);
+
   const ok=await cargarEstadoSupabase();
+
+  clearTimeout(supabaseTimer);
+  supabaseCargandoInicial=false;
+  supabaseArranqueCompleto=true;
+
   if(ok){
     poblarLoginUsuarios();
     renderizar();
     cargarSesion();
     mostrarToast('Datos cargados desde Supabase.');
   }
+  return ok;
 }
 
 // Comandos útiles desde consola del navegador:
@@ -1613,7 +1628,19 @@ document.addEventListener('click',e=>{
   });
 });
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrarCatalogo()});setInterval(()=>{actualizarFechaYTurno();renderizarProduccionVivo()},10000);inicializarFechas();renderizar();cargarSesion();inicializarSupabaseAlInicio();setTimeout(()=>renderizarProduccionVivo(),300);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrarCatalogo()});
+setInterval(()=>{actualizarFechaYTurno();renderizarProduccionVivo()},10000);
+
+async function iniciarApp(){
+  inicializarFechas();
+  const cargoRemoto=await inicializarSupabaseAlInicio();
+  if(!cargoRemoto){
+    renderizar();
+    cargarSesion();
+  }
+  setTimeout(()=>renderizarProduccionVivo(),300);
+}
+iniciarApp();
 </script>
 </body>
 </html>
